@@ -1,0 +1,43 @@
+# 密钥 / 本地配置（含隐私，勿提交）
+.env
+*.local
+
+# 同步与本地数据（含用户隐私，勿提交）
+.sync/
+data/
+
+# 打包产物
+dist/
+bundle.html
+
+# 本地 Whisper 模型权重（大文件，勿提交）
+models/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 助手记忆（本地，不推）
+.workbuddy/
+
+# 日志与临时文件
+*.log
+nul
+debug.log
+.synccloudflared.log
+ocr_test.log
+digest_run.log
+
+# 本地备份目录（临时，勿提交）
+2026-08-08-07-20-05/
+Claw/
+
+# 本地运行产物 / 临时文件
+digest_result.json
+tools/_iv_ocr_output/
+tools/.bak_*/
+tools/_report_draft.json
+tools/fix-0810-digest.json
+tools/_digest_two_urls.txt
+tools/_retitle.py
+tools/_simulate_cmd_codepage936.py

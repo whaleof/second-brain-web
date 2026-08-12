@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>部署状态自检</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #fff5f8; color: #4b1528; padding: 16px; max-width: 560px; margin: 0 auto;
+  }
+  h1 { font-size: 19px; color: #9f1239; margin-bottom: 4px; }
+  .sub { font-size: 12px; color: #b56; margin-bottom: 16px; }
+  .card {
+    background: #fff; border: 1px solid #ffe0ea; border-radius: 16px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .card h2 { font-size: 14px; color: #c2416b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; border-bottom: 1px dashed #fbeaf0; }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: #8a4a63; }
+  .row .v { font-weight: 600; text-align: right; max-width: 65%; word-break: break-all; }
+  .ok { color: #16a34a; } .bad { color: #dc2626; } .warn { color: #d97706; } .mut { color: #b08; opacity:.7; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .pill.g { background: #e7f7ed; color: #15803d; }
+  .pill.r { background: #fde8e8; color: #b91c1c; }
+  .pill.y { background: #fef3cd; color: #b45309; }
+  .urlbox { background: #fff5f8; border: 1px solid #ffd6e6; border-radius: 10px; padding: 8px 10px; font-size: 12px; word-break: break-all; color: #9f1239; margin-top: 4px; }
+  .btn { display: inline-block; margin-top: 8px; background: #c2416b; color: #fff; border: none; border-radius: 10px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+  .btn:active { background: #9f1239; }
+  .dev { padding: 8px 0; border-bottom: 1px dashed #fbeaf0; font-size: 13px; }
+  .dev:last-child { border-bottom: none; }
+  .dev .name { font-weight: 600; }
+  .refresh { text-align: center; font-size: 11px; color: #b56; margin-top: 6px; }
+  a.open { display:block; text-align:center; margin-top:4px; color:#c2416b; font-size:13px; text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+  <h1>部署状态自检</h1>
+  <div class="sub">第二大脑工作台 · 实时状态（每 20 秒自动刷新）</div>
+
+  <div class="card" id="serverCard">
+    <h2>① 本机服务</h2>
+    <div class="row"><span class="k">服务状态</span><span class="v" id="serverState">检测中…</span></div>
+    <div class="row"><span class="k">监听端口</span><span class="v" id="serverPort">—</span></div>
+  </div>
+
+  <div class="card" id="tunnelCard">
+    <h2>② 公网隧道</h2>
+    <div class="row"><span class="k">隧道可达</span><span class="v" id="tunnelReach">—</span></div>
+    <div class="row"><span class="k">本地↔已发布</span><span class="v" id="tunnelMatch">—</span></div>
+    <div class="row"><span class="k">当前地址</span></div>
+    <div class="urlbox" id="tunnelLive">—</div>
+    <button class="btn" id="copyBtn">复制隧道地址</button>
+  </div>
+
+  <div class="card" id="devCard">
+    <h2>③ 设备同步</h2>
+    <div id="devList"><div class="row"><span class="k">加载中…</span></div></div>
+  </div>
+
+  <div class="card" id="bakCard">
+    <h2>④ 本地备份</h2>
+    <div class="row"><span class="k">备份存在</span><span class="v" id="bakExists">—</span></div>
+    <div class="row"><span class="k">备份时间</span><span class="v" id="bakTime">—</span></div>
+    <div class="row"><span class="k">cloudflared</span><span class="v" id="cfSize">—</span></div>
+  </div>
+
+  <a class="open" href="./">← 返回工作台</a>
+  <div class="refresh" id="refreshTip"></div>
+
+<script>
+function rel(ts){
+  if(!ts) return '未知';
+  // ts 可能是 ISO 字符串或毫秒
+  let ms;
+  if(typeof ts === 'number') ms = ts;
+  else { const d = new Date(ts); ms = isNaN(d)?0:d.getTime(); }
+  if(!ms) return '未知';
+  const diff = Date.now() - ms;
+  if(diff < 0) return '刚刚';
+  const m = Math.floor(diff/60000), h = Math.floor(m/60), day = Math.floor(h/24);
+  if(m < 1) return '刚刚';
+  if(m < 60) return m + ' 分钟前';
+  if(h < 24) return h + ' 小时前';
+  return day + ' 天前';
+}
+function fmtSize(b){ return b>=1048576 ? (b/1048576).toFixed(1)+' MB' : (b/1024).toFixed(0)+' KB'; }
+
+async function load(){
+  try{
+    const r = await fetch('/api/deploy-status', {cache:'no-store'});
+    const d = await r.json();
+    // 服务
+    document.getElementById('serverState').innerHTML = '<span class="pill g">运行中</span>';
+    document.getElementById('serverPort').textContent = d.server?.port || '—';
+    // 隧道
+    const reach = d.tunnel?.reachable;
+    document.getElementById('tunnelReach').innerHTML = reach===true ? '<span class="pill g">可达</span>'
+      : reach===false ? '<span class="pill r">不可达</span>' : '<span class="pill y">未探活</span>';
+    const match = d.tunnel?.match;
+    document.getElementById('tunnelMatch').innerHTML = match ? '<span class="pill g">一致</span>'
+      : d.tunnel?.live ? '<span class="pill y">不一致(前端读旧地址)</span>' : '<span class="pill r">无地址</span>';
+    document.getElementById('tunnelLive').textContent = d.tunnel?.live || '（暂无，服务启动约 10 秒后出现）';
+    // 设备
+    const list = document.getElementById('devList');
+    list.innerHTML = '';
+    const devs = d.devices || [];
+    if(!devs.length){ list.innerHTML = '<div class="row"><span class="k">暂无设备同步记录</span></div>'; }
+    devs.forEach(dev=>{
+      const el = document.createElement('div'); el.className='dev';
+      const syncTxt = rel(dev.syncedAt);
+      el.innerHTML = '<div class="name">'+ (dev.device||'?') +'</div><div class="k" style="font-size:12px">上次同步：'+syncTxt+'</div>';
+      list.appendChild(el);
+    });
+    // 备份
+    document.getElementById('bakExists').innerHTML = d.backup?.exists ? '<span class="pill g">有</span>' : '<span class="pill r">无</span>';
+    document.getElementById('bakTime').textContent = rel(d.backup?.updatedAt);
+    const cf = d.cloudflaredSize||0;
+    document.getElementById('cfSize').innerHTML = cf>=40*1048576 ? '<span class="ok">'+fmtSize(cf)+' ✓</span>'
+      : cf>0 ? '<span class="warn">'+fmtSize(cf)+' (过小，可能残缺)</span>' : '<span class="bad">缺失</span>';
+    document.getElementById('refreshTip').textContent = '最后刷新：' + new Date().toLocaleTimeString();
+  }catch(e){
+    document.getElementById('serverState').innerHTML = '<span class="pill r">无法连接本机服务</span>';
+    document.getElementById('refreshTip').textContent = '错误：' + e.message;
+  }
+}
+document.getElementById('copyBtn').onclick = async ()=>{
+  const t = document.getElementById('tunnelLive').textContent;
+  if(t && t.indexOf('http')===0){ try{ await navigator.clipboard.writeText(t); document.getElementById('copyBtn').textContent='已复制 ✓'; setTimeout(()=>document.getElementById('copyBtn').textContent='复制隧道地址',1500);}catch(e){} }
+};
+load();
+setInterval(load, 20000);
+</script>
+</body>
+</html>
