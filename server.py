@@ -19,44 +19,13 @@ import argparse
 import atexit
 import time
 
+from sync_core import _ts, merge_into_master
+
 PORT = 8080
 WEBROOT = os.path.dirname(os.path.abspath(__file__))
 SYNC_DIR = os.path.join(WEBROOT, '.sync')
 MASTER_FILE = os.path.join(SYNC_DIR, 'master.json')
 
-
-def _ts(v):
-    """时间戳统一成 int(毫秒)。兼容 int/float、数字字符串、ISO 日期字符串
-    (如 '2026-08-08T17:30:11.644039' 会转成对应毫秒戳)；空/非数字文本返回 0。
-    用途：同步合并时比较 updatedAt/deletedAt，杜绝 Python `int > str` 抛
-    TypeError 导致 /api/sync 返回 500（阻断级 bug #1 的根因）。"""
-    if v is None:
-        return 0
-    if isinstance(v, bool):
-        return 0
-    if isinstance(v, (int, float)):
-        try:
-            return int(v)
-        except (TypeError, ValueError):
-            return 0
-    if isinstance(v, str):
-        s = v.strip()
-        if not s:
-            return 0
-        # 数字字符串（含小数）
-        try:
-            return int(float(s))
-        except (TypeError, ValueError):
-            pass
-        # ISO 日期字符串
-        for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S',
-                    '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
-            try:
-                return int(datetime.strptime(s, fmt).timestamp() * 1000)
-            except ValueError:
-                continue
-        return 0
-    return 0
 
 # 抖音链接 → 认知笔记 的异步消化任务表（内存态，单人使用足够）
 DIGEST_JOBS = {}
@@ -731,81 +700,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 incoming_changes = payload.get('changes') or payload.get('data') or {}
                 incoming_tombstones = payload.get('tombstones') or []
 
-                # 合并变更：按 gid 比较 updatedAt，最新覆盖
-                # （08-07 bug fix）：如果该 gid 已被 tombstone 标记删除，且删除时间晚于 incoming 的 updatedAt，则拒绝复活
-                for store_name, records in incoming_changes.items():
-                    if store_name not in master['data']:
-                        master['data'][store_name] = {}
-                    for r in records:
-                        gid = r.get('gid')
-                        if not gid:
-                            continue
-                        # 字段归一化：timeline_logs.hour 统一为 int，
-                        # 杜绝 str/int 混写（如自动化 POST 写字符串 "14"）导致下游 Python 排序崩溃
-                        if store_name == 'timeline_logs' and 'hour' in r:
-                            try:
-                                r['hour'] = int(r['hour'])
-                            except (TypeError, ValueError):
-                                pass
-                        # 时间戳归一化（治本 bug #1）：updatedAt 可能是数字/数字串/ISO日期串，
-                        # 统一成 int 毫秒后再存，避免残留脏数据下次又触发 int>str 崩溃
-                        r['updatedAt'] = _ts(r.get('updatedAt'))
-                        # 检查 tombstone：若已被删且删除时间更新，跳过这条 incoming
-                        existing_tomb = master['tombstones'].get(gid)
-                        if existing_tomb and existing_tomb.get('storeName') == store_name:
-                            tomb_time = _ts(existing_tomb.get('deletedAt'))
-                            if tomb_time > _ts(r.get('updatedAt')):
-                                continue  # 拒绝复活
-                        existing = master['data'][store_name].get(gid)
-                        if not existing or _ts(r.get('updatedAt')) > _ts(existing.get('updatedAt')):
-                            master['data'][store_name][gid] = r
-
-                # 合并墓碑：最新删除时间为准，并清除已被删除的数据
-                for t in incoming_tombstones:
-                    gid = t.get('gid')
-                    if not gid:
-                        continue
-                    t['deletedAt'] = _ts(t.get('deletedAt'))
-                    existing_t = master['tombstones'].get(gid)
-                    if not existing_t or _ts(t.get('deletedAt')) > _ts(existing_t.get('deletedAt')):
-                        master['tombstones'][gid] = t
-                    store_name = t.get('storeName')
-                    if store_name and store_name in master['data']:
-                        rec = master['data'][store_name].get(gid)
-                        if rec and _ts(t.get('deletedAt')) > _ts(rec.get('updatedAt')):
-                            del master['data'][store_name][gid]
-
-                # 时间轴重复条目去重：同 date+hour+content 完全相同的记录只保留最新一条，
-                # 其余写 tombstone 并从 data 移除（防止多设备/旧数据把重复内容拉回）。
-                tl_store = master['data'].get('timeline_logs')
-                if tl_store:
-                    tl_groups = {}
-                    for gid, r in list(tl_store.items()):
-                        if gid in master['tombstones']:
-                            continue
-                        date = r.get('date')
-                        hour = r.get('hour')
-                        if not date or hour is None:
-                            continue
-                        try:
-                            hour = int(hour)
-                        except (TypeError, ValueError):
-                            continue
-                        key = (date, hour, r.get('content'))
-                        tl_groups.setdefault(key, []).append((gid, r))
-                    for key, items in tl_groups.items():
-                        if len(items) <= 1:
-                            continue
-                        items.sort(key=lambda x: _ts(x[1].get('updatedAt')))
-                        for gid, r in items[:-1]:
-                            master['tombstones'][gid] = {
-                                'gid': gid,
-                                'storeName': 'timeline_logs',
-                                'deletedAt': now
-                            }
-                            tl_store.pop(gid, None)
-
-                master['updatedAt'] = now
+                # 合并算法（冲突覆盖 / tombstone 防复活 / 删除传播 / timeline 去重）
+                # 抽到 sync_core.merge_into_master，便于独立单元测试；
+                # 此处只负责 IO 与 HTTP 边界，行为与原内联逻辑逐字对齐。
+                master = merge_into_master(master, incoming_changes, incoming_tombstones, now)
                 self.save_master(master)
 
                 # 保留单设备快照，兼容旧逻辑与调试
