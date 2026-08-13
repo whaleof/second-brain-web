@@ -50,10 +50,10 @@ def _ts(v):
 
 def new_master():
     """返回一个空的 master 结构（与 server.load_master 的默认值一致）。"""
-    return {'version': 2, 'updatedAt': 0, 'data': {}, 'tombstones': {}}
+    return {'version': 2, 'schemaVersion': 1, 'updatedAt': 0, 'data': {}, 'tombstones': {}}
 
 
-def merge_into_master(master, incoming_changes, incoming_tombstones, now):
+def merge_into_master(master, incoming_changes, incoming_tombstones, now, incoming_meta=None):
     """把 incoming 合并进 master（原地修改并返回 master）。
 
     Args:
@@ -141,6 +141,15 @@ def merge_into_master(master, incoming_changes, incoming_tombstones, now):
                     'deletedAt': now
                 }
                 tl_store.pop(gid, None)
+
+    # 3.5 透传 schemaVersion（前后端版本对齐护栏）：取 incoming 与本地较大者，
+    # 保证多端版本号单调对齐，又不因高版本端临时回落而丢数据
+    if incoming_meta and incoming_meta.get('schemaVersion'):
+        try:
+            sv = int(incoming_meta['schemaVersion'])
+            master['schemaVersion'] = max(int(master.get('schemaVersion', 1)), sv)
+        except (TypeError, ValueError):
+            pass
 
     # 4. 更新 master 时间戳
     master['updatedAt'] = now

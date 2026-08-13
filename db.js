@@ -12,6 +12,11 @@ const LS_BACKUP_KEY = 'sb_indexeddb_backup';
 const SYNC_META_STORE = 'sync_meta';
 const TOMBSTONES_STORE = 'tombstones';
 
+// 写入前校验层（UMD 挂在 window.SchemaValidator；node 测试用 require 取同名对象）
+const { validateRecord, DBError } = (typeof window !== 'undefined' && window.SchemaValidator)
+  ? window.SchemaValidator
+  : { validateRecord: () => ({ ok: true }), DBError: Error };
+
 // 后端 API 基址：
 // 默认 ''（同源）——本地由 server.py 托管时无需配置。
 // 部署到静态托管（GitHub Pages / CloudStudio / Cloudflare Pages）后，
@@ -201,6 +206,8 @@ class SecondBrainDB {
 
   async add(storeName, data) {
     await this.open();
+    const _v = validateRecord(storeName, data, 'add');
+    if (!_v.ok) return Promise.reject(new DBError(_v.code, _v.message));
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
@@ -219,6 +226,8 @@ class SecondBrainDB {
 
   async put(storeName, data) {
     await this.open();
+    const _v = validateRecord(storeName, data, 'put');
+    if (!_v.ok) return Promise.reject(new DBError(_v.code, _v.message));
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
@@ -622,6 +631,7 @@ class SecondBrainDB {
         const pushBody = JSON.stringify({
           changes: outgoing.changes,
           tombstones: outgoing.tombstones,
+          meta: { schemaVersion: DB_VERSION },
           pushedAt: Date.now()
         });
         const pushResp = await fetch(apiUrl(`/api/sync?device=${device}&since=${lastSyncAt}`), {

@@ -703,7 +703,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # 合并算法（冲突覆盖 / tombstone 防复活 / 删除传播 / timeline 去重）
                 # 抽到 sync_core.merge_into_master，便于独立单元测试；
                 # 此处只负责 IO 与 HTTP 边界，行为与原内联逻辑逐字对齐。
-                master = merge_into_master(master, incoming_changes, incoming_tombstones, now)
+                master = merge_into_master(master, incoming_changes, incoming_tombstones, now, payload.get('meta'))
                 self.save_master(master)
 
                 # 保留单设备快照，兼容旧逻辑与调试

@@ -145,3 +145,30 @@ class TestMasterTimestamp:
         m = new_master()
         merge_into_master(m, {}, [], now=9999)
         assert m['updatedAt'] == 9999
+
+
+class TestSchemaVersionPassthrough:
+    """护栏3：前后端 schema 版本互相认，合并时单调对齐不回落。"""
+
+    def test_new_master_has_schema_version(self):
+        m = new_master()
+        assert m['schemaVersion'] == 1
+
+    def test_incoming_version_takes_max(self):
+        m = new_master()
+        incoming = {'timeline_logs': [
+            {'gid': 'g1', 'date': '2026-08-13', 'hour': 14, 'content': 'x', 'updatedAt': 200}
+        ]}
+        merge_into_master(m, incoming, [], now=5000, incoming_meta={'schemaVersion': 5})
+        assert m['schemaVersion'] == 5
+
+    def test_lower_version_does_not_roll_back(self):
+        m = new_master()
+        merge_into_master(m, {}, [], now=100, incoming_meta={'schemaVersion': 5})
+        merge_into_master(m, {}, [], now=200, incoming_meta={'schemaVersion': 3})
+        assert m['schemaVersion'] == 5
+
+    def test_missing_meta_keeps_default(self):
+        m = new_master()
+        merge_into_master(m, {}, [], now=100)
+        assert m['schemaVersion'] == 1
