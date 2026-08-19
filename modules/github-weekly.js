@@ -99,9 +99,10 @@ const GitHubWeekly = {
     const zh = it.zh || it.description || '';
     // ④ 已消化过 → 自动灰显
     const isDig = this.digested && this.digested.has(it.name);
+    // [2026-08-13] 周榜不再写入认知模块列表，改为「加入本周摘要」给 WorkBuddy 统一阅读。
     const digestBtn = isDig
-      ? `<span class="gh-digested">已消化</span>`
-      : `<button class="btn gh-digest" onclick="GitHubWeekly.digest('${esc(it.name)}')">消化到认知</button>`;
+      ? `<span class="gh-digested">已加入摘要</span>`
+      : `<button class="btn gh-digest" onclick="GitHubWeekly.digest('${esc(it.name)}')">加入本周摘要</button>`;
     return `
       <div class="gh-card ${isAI ? 'ai' : ''} ${it.rank === 1 ? 'top' : ''}">
         <div class="gh-body">
@@ -125,66 +126,18 @@ const GitHubWeekly = {
     if (!this.data) return;
     const it = this.data.items.find(i => i.name === name);
     if (!it) return;
-    // 找到当前点击的按钮，立即显示加载态
+    // [2026-08-13] 周榜不再写入认知模块 learn_notes，只记录「加入本周摘要」状态。
+    // 真正的阅读/摘要由周日自动化统一做，避免单条仓库占满认知列表。
     const cardBtns = Array.from(document.querySelectorAll('.gh-digest'))
       .filter(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(name));
-    const btn = cardBtns[0];
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '提炼中…';
-      btn.style.opacity = '0.6';
-    }
-    try {
-      // 调后端 DeepSeek 结构化提炼
-      const resp = await fetch(apiUrl('/api/digest-github'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: it.name,
-          url: it.url,
-          description: it.description || '',
-          zh: it.zh || '',
-        })
-      });
-      const j = await resp.json();
-      if (!j.ok) throw new Error(j.error || '提炼失败');
-      const note = j.note || (it.zh || it.description || '');
-      const tags = (it.domain === 'AI' ? ['AI', '科技'] : ['科技']).concat('github-weekly');
-      const now = Date.now();
-      await window.DB.add('learn_notes', {
-        url: it.url,
-        title: it.name,
-        note: note,
-        tags: tags,
-        source: 'github-weekly',
-        status: 'done',
-        createdAt: now,
-        updatedAt: now
-      });
-      if (this.digested) this.digested.add(name);
-      if (window.DB.syncNow) {
-        try { await window.DB.syncNow(); } catch (e) {}
-      }
-      if (window.toast) window.toast('已提炼并写入认知模块，正在跳转…');
-      else alert('已提炼并写入认知模块');
-      setTimeout(() => { if (window.navigateTo) window.navigateTo('learn'); }, 600);
-      // 标记该卡按钮为已消化（替换为灰色标签）
-      cardBtns.forEach(b => {
-        const span = document.createElement('span');
-        span.className = 'gh-digested';
-        span.textContent = '已消化';
-        b.replaceWith(span);
-      });
-    } catch (e) {
-      // 失败时恢复按钮
-      cardBtns.forEach(b => {
-        b.disabled = false;
-        b.textContent = '消化到认知';
-        b.style.opacity = '1';
-      });
-      if (window.toast) window.toast('提炼失败：' + e.message);
-      else alert('提炼失败：' + e.message);
-    }
+    cardBtns.forEach(b => {
+      const span = document.createElement('span');
+      span.className = 'gh-digested';
+      span.textContent = '已加入摘要';
+      b.replaceWith(span);
+    });
+    if (this.digested) this.digested.add(name);
+    if (window.toast) window.toast('已加入本周摘要，周日统一给 WorkBuddy 读');
   }
 };
 

@@ -16,7 +16,7 @@ const App = {
     'ai-daily': { title: 'AI日报', render: () => AIDaily.render() },
     thoughts: { title: '随想', render: () => Thoughts.render() },
     learn: { title: '认知', render: () => Learn.render() },
-    'github-weekly': { title: 'GitHub周榜', render: () => GitHubWeekly.render() },
+    absorption: { title: '认知吸收卡', render: () => Absorption.render() },
     fund: { title: '基金投资', render: () => Fund.render() }
   },
   theme: localStorage.getItem('sb_theme') || 'light'
@@ -160,7 +160,7 @@ function navigateTo(module) {
   App.modules[module].render();
   // 控制 FAB（时间轴、体重、饮品、首页、市场、备忘录不需要 FAB；计划模块顶部已有「添加」输入框，亦隐藏）
   const fab = document.getElementById('fab');
-  if (module === 'timeline' || module === 'weight' || module === 'drinks' || module === 'home' || module === 'market' || module === 'memo' || module === 'plans' || module === 'ai-daily' || module === 'thoughts' || module === 'habits' || module === 'okr' || module === 'fund') {
+  if (module === 'timeline' || module === 'weight' || module === 'drinks' || module === 'home' || module === 'market' || module === 'memo' || module === 'plans' || module === 'ai-daily' || module === 'thoughts' || module === 'habits' || module === 'okr' || module === 'fund' || module === 'absorption') {
     fab.classList.remove('show');
   } else {
     fab.onclick = () => onFabClick(module);
@@ -478,8 +478,15 @@ async function boot() {
     if (editing) return;
     const mod = App.modules[App.currentModule];
     if (!mod || typeof mod.render !== 'function') return;
+    // 吸收卡：内容为每周生成的独立静态 HTML（iframe 加载），同步不影响它；
+    // 重渲染会重建 iframe 并刷新缓存戳，导致每 20 秒白屏闪跳，故跳过（治本）。
+    if (App.currentModule === 'absorption') return;
+    // 习惯模块：同步只原地重绘卡片，不整页重建，杜绝打卡后整页闪跳（治本）
+    if (App.currentModule === 'habits' && typeof Habits.refresh === 'function') {
+      Habits.refresh();
+    }
     // 基金模块：同步只原地刷新数字，不重建 DOM（防止自选/持仓卡片反复闪动/消失）
-    if (App.currentModule === 'fund' && typeof Fund.refreshData === 'function') {
+    else if (App.currentModule === 'fund' && typeof Fund.refreshData === 'function') {
       Fund.refreshData();
     } else {
       mod.render();

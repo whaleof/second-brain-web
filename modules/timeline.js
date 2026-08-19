@@ -8,6 +8,11 @@ const Timeline = {
   async render() {
     const content = document.getElementById('content');
     try {
+      // 首次进入自动清理历史重复记录（同日期+小时+内容只留一条）
+      if (!localStorage.getItem('tl_dedupe_v1')) {
+        localStorage.setItem('tl_dedupe_v1', '1');
+        this.dedupeAll();
+      }
       const allLogs = await window.DB.getAll('timeline_logs');
       const todayLogs = allLogs.filter(l => l.date === this.currentDate);
 
@@ -15,8 +20,11 @@ const Timeline = {
       const hourMap = {};
       for (const log of todayLogs) {
         const hk = Number(log.hour);
+        const c = (log.content || '').trim();
+        if (!c) continue;
         if (!hourMap[hk]) hourMap[hk] = [];
-        hourMap[hk].push(log);
+        // 同小时同内容只留一条展示，避免历史重复记录被串成"内容，内容"
+        if (!hourMap[hk].some(x => (x.content || '') === c)) hourMap[hk].push({ ...log, content: c });
       }
 
       // 构建 0:00 ~ 24:00 的时间轴（覆盖凌晨早起）
@@ -105,7 +113,7 @@ const Timeline = {
                       ${hi === 0 ? `<button class="tl-collapse-btn" onclick="event.stopPropagation();Timeline.toggleGroup(${h.hour})" title="收起">▲</button>` : ''}
                       <button class="tl-clear-btn" onclick="event.stopPropagation();Timeline.clearHour(${hr})" title="清除">✕</button>
                     </div>
-                    <input class="input tl-hour-input" id="tl_h_${hr}" value="${esc(h.content)}" readonly placeholder="点击两次输入..." onclick="Timeline.activateInput(${hr})" onkeydown="if(event.key==='Enter'){this.blur();Timeline.autoSave(${hr},this.value)}" onblur="Timeline.autoSave(${hr},this.value)" />
+                    <input class="input tl-hour-input" id="tl_h_${hr}" value="${esc(h.content)}" readonly placeholder="点击两次输入..." onclick="Timeline.activateInput(${hr})" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="Timeline.autoSave(${hr},this.value)" />
                   </div>
                 </div>`;
               }).join('');
@@ -125,7 +133,7 @@ const Timeline = {
                   ${isMerged ? `<button class="tl-clear-btn" onclick="event.stopPropagation();Timeline.clearGroup(${h.hour})" title="清除整组">✕</button>` : ''}
                   ${hasContent && !isMerged ? `<button class="tl-clear-btn" onclick="event.stopPropagation();Timeline.clearHour(${h.hour})" title="清除">✕</button>` : ''}
                 </div>
-                <input class="input tl-hour-input" id="tl_h_${h.hour}" value="${esc(h.content)}" readonly placeholder="点击两次输入..." onclick="Timeline.activateInput(${h.hour})" onkeydown="if(event.key==='Enter'){this.blur();Timeline.autoSave(${h.hour},this.value)}" onblur="Timeline.autoSave(${h.hour},this.value)" />
+                <input class="input tl-hour-input" id="tl_h_${h.hour}" value="${esc(h.content)}" readonly placeholder="点击两次输入..." onclick="Timeline.activateInput(${h.hour})" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="Timeline.autoSave(${h.hour},this.value)" />
               </div>
             </div>`;
           }).join('')}
@@ -210,43 +218,71 @@ const Timeline = {
       content = content?.target?.value || '';
     }
     content = (content || '').trim();
-    const input = document.getElementById('tl_h_' + hour);
-    const allLogs = await window.DB.getAll('timeline_logs');
-    const sameHourLogs = allLogs.filter(l => l.date === this.currentDate && Number(l.hour) === hour);
+    const key = this.currentDate + '#' + hour;
+    // 防并发双写：回车会同时触发 blur 与 keydown 两路 autoSave，两次写库可能并发，
+    // 导致同(日期,小时)被写入两条记录、渲染时串成"内容，内容"两遍。
+    // 用锁保证同一时刻只跑一个保存流程，第二次直接放弃（输入一致），从源头杜绝重复。
+    this._savingHours = this._savingHours || new Set();
+    if (this._savingHours.has(key)) return;
+    this._savingHours.add(key);
+    try {
+      const input = document.getElementById('tl_h_' + hour);
+      const allLogs = await window.DB.getAll('timeline_logs');
+      const sameHourLogs = allLogs.filter(l => l.date === this.currentDate && Number(l.hour) === hour);
 
-    // 强制每个 (date, hour) 只保留一条 canonical 记录，避免同小时多条记录被界面串成重复文案。
-    // 同小时的多条旧记录会被删除并写 tombstone，保留最新一条更新为当前输入内容。
-    const sorted = sameHourLogs.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
-    const keeper = sorted[sorted.length - 1] || null;
+      // 强制每个 (date, hour) 只保留一条 canonical 记录，避免同小时多条记录被界面串成重复文案。
+      const sorted = sameHourLogs.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+      const keeper = sorted[sorted.length - 1] || null;
 
-    if (content) {
-      if (keeper && keeper.content === content && sorted.length === 1) {
-        // 没变化且只有一条，直接返回
-        if (input) input.setAttribute('readonly', '');
-        this.lastTapped = null;
-        return;
-      }
-      // 删除同小时其他记录（ keeper 由下面的 put/add 处理）
-      for (const lg of sorted) {
-        if (keeper && lg.id === keeper.id) continue;
-        await window.DB.delete('timeline_logs', lg.id);
-      }
-      if (keeper) {
-        await window.DB.put('timeline_logs', { ...keeper, content, updatedAt: Date.now() });
+      if (content) {
+        if (keeper && keeper.content === content && sorted.length === 1) {
+          // 没变化且只有一条，直接返回
+          if (input) input.setAttribute('readonly', '');
+          this.lastTapped = null;
+          return;
+        }
+        // 删除同小时其他记录，保留 keeper 由下面的 put/add 更新
+        for (const lg of sorted) {
+          if (keeper && lg.id === keeper.id) continue;
+          await window.DB.delete('timeline_logs', lg.id);
+        }
+        if (keeper) {
+          await window.DB.put('timeline_logs', { ...keeper, content, updatedAt: Date.now() });
+        } else {
+          await window.DB.add('timeline_logs', { date: this.currentDate, hour, content });
+        }
       } else {
-        await window.DB.add('timeline_logs', { date: this.currentDate, hour, content });
+        // 清空该小时：删除全部记录
+        for (const lg of sameHourLogs) {
+          await window.DB.delete('timeline_logs', lg.id);
+        }
       }
-    } else {
-      // 清空该小时：删除全部记录
-      for (const lg of sameHourLogs) {
-        await window.DB.delete('timeline_logs', lg.id);
-      }
+      // 加回 readonly
+      if (input) input.setAttribute('readonly', '');
+      this.lastTapped = null;
+      // 重新渲染，确保合并组与重复状态正确
+      this.render();
+    } finally {
+      this._savingHours.delete(key);
     }
-    // 加回 readonly
-    if (input) input.setAttribute('readonly', '');
-    this.lastTapped = null;
-    // 重新渲染，确保合并组与重复状态正确
-    this.render();
+  },
+
+  // 一次性清理历史重复记录：同(日期,小时,内容)只保留一条，其余删除（写 tombstone 随同步传播）
+  async dedupeAll() {
+    try {
+      const all = await window.DB.getAll('timeline_logs');
+      const seen = new Map();
+      const toDelete = [];
+      for (const l of all) {
+        const c = (l.content || '').trim();
+        if (!c) continue;
+        const k = l.date + '#' + l.hour + '#' + c;
+        if (seen.has(k)) toDelete.push(l.id);
+        else seen.set(k, l.id);
+      }
+      for (const id of toDelete) await window.DB.delete('timeline_logs', id);
+      if (toDelete.length) console.log('[timeline] 已去重清理', toDelete.length, '条重复记录');
+    } catch (e) { console.warn('timeline 去重失败', e); }
   },
 
   patchCard(hour, content) {

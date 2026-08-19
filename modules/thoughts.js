@@ -97,18 +97,22 @@ const Thoughts = {
     // 只有「洞察/延伸/落地」标签词本身带粉底，summary和detail都是纯文本
     const stageCard = (st) => {
       const tags = [];
-      (st.insights || []).forEach(s => {
+      // 阶段内去重：同类第一条带标签，后续同类只留纯文字、不缩进无标签
+      (st.insights || []).forEach((s, idx) => {
         const head = s.summary ? esc(s.summary) + ' — ' : '';
-        tags.push(`<div class="th-dg-item"><span class="th-dg-tag">洞察</span>${head}${esc(s.detail || '')}</div>`);
+        const label = idx === 0 ? '<span class="th-dg-tag">洞察</span>' : '';
+        tags.push(`<div class="th-dg-item">${label}${head}${esc(s.detail || '')}</div>`);
       });
-      (st.extensions || []).forEach(s => {
+      (st.extensions || []).forEach((s, idx) => {
         const head = s.summary ? esc(s.summary) + ' — ' : '';
-        tags.push(`<div class="th-dg-item"><span class="th-dg-tag">延伸</span>${head}${esc(s.detail || '')}</div>`);
+        const label = idx === 0 ? '<span class="th-dg-tag">延伸</span>' : '';
+        tags.push(`<div class="th-dg-item">${label}${head}${esc(s.detail || '')}</div>`);
       });
-      (st.actions || []).forEach(a => {
+      (st.actions || []).forEach((a, idx) => {
         const t = a.text || (typeof a === 'string' ? a : '');
         const body = a.why ? (t ? esc(t) + ' — ' + esc(a.why) : esc(a.why)) : esc(t);
-        tags.push(`<div class="th-dg-item"><span class="th-dg-tag">落地</span>${body}</div>`);
+        const label = idx === 0 ? '<span class="th-dg-tag">落地</span>' : '';
+        tags.push(`<div class="th-dg-item">${label}${body}</div>`);
       });
 
       return `

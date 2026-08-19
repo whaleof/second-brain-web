@@ -97,7 +97,8 @@ const Learn = {
     }
 
     // 浏览模式：标签 + 状态筛选（保持原习惯，想按标签翻就清空框）
-    const all = await window.DB.getAll('learn_notes');
+    const all = (await window.DB.getAll('learn_notes'))
+      .filter(n => !(n.source || '').startsWith('absorption-'));
     all.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     // 先把旧格式「由今日碰撞生成...」统一整理成新三段式，再显示
@@ -212,7 +213,8 @@ const Learn = {
     this.recallResults = null;
     this.render();
     try {
-      const notes = await window.DB.getAll('learn_notes');
+      const notes = (await window.DB.getAll('learn_notes'))
+        .filter(n => !(n.source || '').startsWith('absorption-'));
       if (!notes.length) {
         this.recallResults = [];
         this.recallLoading = false;
@@ -236,7 +238,8 @@ const Learn = {
     } catch (e) {
       console.error('回忆失败：', e);
       try {
-        const notes = await window.DB.getAll('learn_notes');
+        const notes = (await window.DB.getAll('learn_notes'))
+          .filter(n => !(n.source || '').startsWith('absorption-'));
         this.recallResults = keywordRank(notes, query).slice(0, 12);
       } catch (_) { this.recallResults = []; }
     }
@@ -545,19 +548,9 @@ const Learn = {
   },
 
   // 状态分段：全部 / 待消化 / 已消化（与标签筛选叠加）
+  // [2026-08-13] 按用户要求隐藏 status tab：状态维度对用户无价值，且吸收卡已拆出独立入口。
   renderStatusBar(all) {
-    const cnt = { pending: 0, done: 0 };
-    all.forEach(n => { const s = n.status || 'done'; cnt[s] = (cnt[s] || 0) + 1; });
-    const tab = (key, label, count) => `
-      <button class="learn-status-tab ${this.statusFilter === key ? 'active' : ''}" onclick="Learn.setStatusFilter('${key}')">
-        ${label}${count != null ? ` <span class="fcount">${count}</span>` : ''}
-      </button>`;
-    return `
-      <div class="learn-status-bar">
-        ${tab('all', '全部')}
-        ${tab('pending', '待消化', cnt.pending)}
-        ${tab('done', '已消化', cnt.done)}
-      </div>`;
+    return '';
   },
 
   setStatusFilter(key) {
@@ -607,14 +600,9 @@ const Learn = {
     const authorHtml = n.author
       ? `<span class="learn-author">@${esc(n.author)}</span>` : '';
 
-    const isPending = (n.status || 'done') === 'pending';
-    const statusBadge = isPending
-      ? `<span class="learn-status pending">待消化</span>`
-      : `<span class="learn-status done">已消化</span>`;
-
-    const markBtn = isPending
-      ? `<button class="list-item-action" title="标记已消化" onclick="Learn.setStatus(${n.id}, 'done')">✓</button>`
-      : `<button class="list-item-action" title="退回待消化" onclick="Learn.setStatus(${n.id}, 'pending')">↺</button>`;
+    // [2026-08-13] 隐藏状态徽章与打勾按钮：用户从不对 learn_notes 打勾，该维度已无价值。
+    const statusBadge = '';
+    const markBtn = '';
 
     const hasStructured = n.note && /^(核心问题|主线|核心观点|结论|适用场景|行动建议|作者在干嘛|关联工作台)/.test(n.note);
     const collapsible = hasStructured || (n.source === 'collision');

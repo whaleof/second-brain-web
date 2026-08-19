@@ -3,6 +3,7 @@
 const Home = {
   async render() {
     const content = document.getElementById('content');
+    await (typeof migratePlans === 'function' ? migratePlans() : Promise.resolve()); // 每次打开首页先把「明日计划」按真实日期转正为「今日任务」
     const today = todayStr();
     const [habits, habitLogs, thoughts, timelineLogs, drinks, weights, finances, plansAll] = await Promise.all([
       window.DB.getAll('habits'),

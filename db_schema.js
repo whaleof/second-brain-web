@@ -50,8 +50,10 @@
       types: { amount: 'number', type: 'string' },
     },
     habit_logs: {
+      // habitId 是 habits.id 的外键，实际为数字（store 主键 autoIncrement）；
+      // 允许 number | string，避免误拦正常打卡写入（导致点圆圈无反应）。
       require: ['habitId', 'date'],
-      types: { habitId: 'string', date: 'string' },
+      types: { habitId: 'id', date: 'string' },
     },
     kv_store: {
       require: ['key'],
@@ -89,6 +91,7 @@
       let bad = false;
       if (t === 'number') bad = typeof val !== 'number' || !isFinite(val);
       else if (t === 'string') bad = typeof val !== 'string';
+      else if (t === 'id') bad = (typeof val !== 'number' && typeof val !== 'string') || (typeof val === 'number' && !isFinite(val));
       if (bad) {
         return { ok: false, code: CODES.TYPE_MISMATCH, message: `${storeName}.${f} 必须是 ${t} 类型` };
       }

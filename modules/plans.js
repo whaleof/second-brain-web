@@ -9,37 +9,41 @@ function weekStartStr() {
   return fmtDate(d.getTime());
 }
 
+// 统一的计划时间联动：把「明日计划」在到达其日期当天自动转为「今日任务」，过期的「今日任务」归档。
+// 必须用 await 在每次首页/计划页渲染前调用；否则只停留在首页时迁移不会触发（之前搬进首页框后失效的根因）。
+async function migratePlans(today, curWeek) {
+  today = today || todayStr();
+  curWeek = curWeek || weekStartStr();
+  const plans = await window.DB.getAll('plans');
+  // 1) 到点的「明日计划」→ 转为「今日任务」：planDate <= today 即当天/过期就转（修复原先慢一天）
+  for (const p of plans.filter(p => p.planType === 'tomorrow' && p.status !== 'completed' && p.planDate && p.planDate <= today)) {
+    await window.DB.put('plans', { ...p, planType: 'today', planDate: today, updatedAt: Date.now() });
+  }
+  // 2) 过期的「今日任务」自动归档为历史
+  for (const p of plans.filter(p => p.planType === 'today' && p.planDate && p.planDate < today && !p.archived)) {
+    await window.DB.put('plans', { ...p, archived: true, updatedAt: Date.now() });
+  }
+  // 3) 跨周的「本周计划」自动归档为历史；无 weekStart 的遗留周任务归到本周
+  for (const p of plans.filter(p => p.planType === 'week')) {
+    if (p.weekStart && p.weekStart < curWeek && !p.archived) {
+      await window.DB.put('plans', { ...p, archived: true, updatedAt: Date.now() });
+    } else if (!p.weekStart) {
+      await window.DB.put('plans', { ...p, weekStart: curWeek, updatedAt: Date.now() });
+    }
+  }
+}
+window.migratePlans = migratePlans;
+
 const Plans = {
   currentTab: 'today', // today | tomorrow | week | long | history
   quickCategory: '工作',
 
   async render() {
     const content = document.getElementById('content');
-    let plans = await window.DB.getAll('plans');
     const today = todayStr();
     const curWeek = weekStartStr();
-
-    // 1) 联动：过期的「明日计划」自动迁移为「今日任务」
-    for (const p of plans.filter(p => p.planType === 'tomorrow' && p.status !== 'completed' && p.planDate && p.planDate < today)) {
-      await window.DB.put('plans', { ...p, planType: 'today', planDate: today, updatedAt: Date.now() });
-    }
-    // 2) 过期的「今日任务」自动归档为历史
-    for (const p of plans.filter(p => p.planType === 'today' && p.planDate && p.planDate < today && !p.archived)) {
-      await window.DB.put('plans', { ...p, archived: true, updatedAt: Date.now() });
-    }
-    // 3) 跨周的「本周计划」自动归档为历史；无 weekStart 的遗留周任务归到本周
-    for (const p of plans.filter(p => p.planType === 'week')) {
-      if (p.weekStart && p.weekStart < curWeek && !p.archived) {
-        await window.DB.put('plans', { ...p, archived: true, updatedAt: Date.now() });
-      } else if (!p.weekStart) {
-        await window.DB.put('plans', { ...p, weekStart: curWeek, updatedAt: Date.now() });
-      }
-    }
-    if (plans.some(p => p.planType === 'tomorrow' && p.planDate && p.planDate < today)
-      || plans.some(p => (p.planType === 'today' || p.planType === 'week') && !p.archived && ((p.planDate && p.planDate < today) || (p.weekStart && p.weekStart < curWeek)))
-      || plans.some(p => p.planType === 'week' && !p.weekStart)) {
-      plans = await window.DB.getAll('plans');
-    }
+    await migratePlans(today, curWeek);
+    let plans = await window.DB.getAll('plans');
 
     // 按 tab 过滤
     let filtered = plans;
@@ -256,8 +260,8 @@ const Plans = {
               </select>
             </div>
             <div class="form-group" style="flex:1">
-              <label class="form-label">截止日期</label>
-              <input class="input" id="p_deadline" type="date" value="${esc(p.deadline)}" />
+              <label class="form-label">任务日期</label>
+              <input class="input" id="p_deadline" type="date" value="${esc(p.deadline || p.planDate || '')}" />
             </div>
           </div>
           <div class="form-group">

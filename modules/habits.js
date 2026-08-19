@@ -4,7 +4,7 @@
 // 默认习惯名称（用于「删除后不再自动补回」判断）
 const HB_DEFAULT_NAMES = new Set([
   '早起', '早睡', '洗头', '洗澡', '练舞', '喝水', '外出',
-  '锻炼', '护眼', '吃水果', '记账', '拉伸'
+  '锻炼', '护眼', '吃水果', '记账', '拉伸', '换装', '取快递', '网购', '化妆'
 ]);
 const HB_REMOVED_KEY = 'hb_removed_defaults';
 // 默认习惯使用「稳定 gid」= 'hb-' + 名称，保证各设备播种出的同一习惯 gid 一致，
@@ -48,7 +48,7 @@ const HB_THEMES = {
   night:    { name: '夜幕', bg: '#2B2730', dot: '#3C3744' }
 };
 const HB_ACCENTS = ['#E79BB0', '#9CC4B8', '#A9A0D4', '#7FB1D9', '#E6B17A', '#C98AA6', '#8FB98E', '#D98C8C'];
-const HB_ICONS = ['🌿','☕','💧','🏃','🚶','🌅','🌙','🚿','💪','🧘','📚','📖','✍️','🎯','🥗','🍎','🦷','💊','🚭','🧴','🌸','🔥','⭐','💡','🎵','🎨','💻','📝','🏊','🚴','⛰️','🐱','🍵','🌞','☀️','💤','🤸','🧠','🥱','🍳','🧹','🛒','💰','🌱','🎮','📷','🌈','🐶','🍇','🌛','🛏️','🧖'];
+const HB_ICONS = ['🌿','☕','💧','🏃','🚶','🌅','🌙','🚿','💪','🧘','📚','📖','✍️','🎯','🥗','🍎','🦷','💊','🚭','🧴','🌸','🔥','⭐','💡','🎵','🎨','💻','📝','🏊','🚴','⛰️','🐱','🍵','🌞','☀️','💤','🤸','🧠','🥱','🍳','🧹','🛒','💰','🌱','🎮','📷','🌈','🐶','🍇','🌛','🛏️','🧖','👕','📦','🚚','💄'];
 const HB_TYPES = [
   { key: 'check', label: '打勾', desc: '完成即勾选' },
   { key: 'count', label: '计数', desc: '每天 N 次' },
@@ -539,6 +539,32 @@ const Habits = {
     const el = document.querySelector('.hb-top');
     if (!el) return;
     el.outerHTML = this.topCard(this._ctx.habits, this._ctx.logs, this._ctx.moods, this._ctx.ds, this._ctx.ds === todayStr());
+  },
+
+  // 同步拉到新数据后的轻量刷新：原地重绘，杜绝整页重建导致的闪跳/滚动跳动。
+  // 仅当习惯集合（增删）发生变化时才整页重建；否则只替换卡片 DOM，保留滚动位置。
+  async refresh() {
+    const wrap = document.querySelector('.hb-wrap');
+    if (!wrap) return;   // 习惯页未激活，无需刷新（避免误切视图）
+    try {
+      const habits = await this.loadHabits();
+      const logs = await this.loadLogs();
+      const moods = await this.loadMoods();
+      const ds = this._currentDate();
+      const prev = this._ctx;
+      this._ctx = { habits, logs, moods, ds };
+      // 管理/统计页直接原地重建（数据量小且需重排），带 preserveScroll
+      if (this.tab !== 'today') { this.render(true); return; }
+      // 习惯集合变化（跨设备增删）才整页重建，否则原地重绘
+      const prevGids = prev ? prev.habits.map(h => h.gid).sort().join('|') : '';
+      const nowGids = habits.map(h => h.gid).sort().join('|');
+      if (prevGids !== nowGids) { this.render(true); return; }
+      this.repaintTop();
+      for (const h of habits) this.repaintCard(h.gid);
+    } catch (e) {
+      console.warn('[habits] refresh 失败，回退整页渲染', e);
+      this.render(true);
+    }
   },
 
   async toggleDone(gid) {
@@ -1166,7 +1192,10 @@ const Habits = {
       { name: '护眼',   icon: '👀', color: '#AED581', size: 's', type: 'check',    target: 0,  order: 8,  desc: '屏幕之外，眼睛也需要休息' },
       { name: '吃水果', icon: '🍎', color: '#FF8A65', size: 's', type: 'check',    target: 0,  order: 9,  desc: '给身体加点颜色' },
       { name: '记账',   icon: '🧾', color: '#BCAAA4', size: 's', type: 'check',    target: 0,  order: 10, desc: '看见钱去哪儿了' },
-      { name: '拉伸',   icon: '🧘', color: '#7986CB', size: 's', type: 'duration', target: 15, order: 11, desc: '把紧绷还回去' }
+      { name: '拉伸',   icon: '🧘', color: '#7986CB', size: 's', type: 'duration', target: 15, order: 11, desc: '把紧绷还回去' },
+      { name: '换装',   icon: '👕', color: '#CE93D8', size: 's', type: 'check',    target: 0,  order: 12, desc: '每天换上干净衣服' },
+      { name: '取快递', icon: '📦', color: '#8D6E63', size: 's', type: 'check',    target: 0,  order: 13, desc: '及时取件不积压' },
+      { name: '网购',   icon: '🛒', color: '#4DB6AC', size: 's', type: 'check',    target: 0,  order: 14, desc: '理性消费，按需下单' }
     ];
     const ids = [];
     for (const h of habits) {
@@ -1298,7 +1327,11 @@ const Habits = {
       { name: '护眼',   icon: '👀', color: '#AED581', size: 's', type: 'check',    target: 0,  order: 8,  desc: '屏幕之外，眼睛也需要休息' },
       { name: '吃水果', icon: '🍎', color: '#FF8A65', size: 's', type: 'check',    target: 0,  order: 9,  desc: '给身体加点颜色' },
       { name: '记账',   icon: '🧾', color: '#BCAAA4', size: 's', type: 'check',    target: 0,  order: 10, desc: '看见钱去哪儿了' },
-      { name: '拉伸',   icon: '🧘', color: '#7986CB', size: 's', type: 'duration', target: 15, order: 11, desc: '把紧绷还回去' }
+      { name: '拉伸',   icon: '🧘', color: '#7986CB', size: 's', type: 'duration', target: 15, order: 11, desc: '把紧绷还回去' },
+      { name: '换装',   icon: '👕', color: '#CE93D8', size: 's', type: 'check',    target: 0,  order: 12, desc: '每天换上干净衣服' },
+      { name: '取快递', icon: '📦', color: '#8D6E63', size: 's', type: 'check',    target: 0,  order: 13, desc: '及时取件不积压' },
+      { name: '网购',   icon: '🛒', color: '#4DB6AC', size: 's', type: 'check',    target: 0,  order: 14, desc: '理性消费，按需下单' },
+      { name: '化妆',   icon: '💄', color: '#EC407A', size: 's', type: 'check',    target: 0,  order: 15, desc: '今天也好好对待自己' }
     ];
     let added = 0;
     for (const d of defaults) {

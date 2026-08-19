@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
   <title>第二大脑 · WorkBuddy</title>
-  <link rel="stylesheet" href="styles.css?v=20260812a" />
+  <link rel="stylesheet" href="styles.css?v=20260819a" />
   <link rel="icon" href="icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <script>
@@ -32,17 +32,21 @@
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="8" height="8" rx="1"/><rect x="14" y="3" width="8" height="8" rx="1"/><rect x="2" y="15" width="8" height="6" rx="1"/><rect x="14" y="15" width="8" height="6" rx="1"/></svg></span>
         <span class="nav-label">首页</span>
       </button>
-      <button class="nav-btn" data-module="learn" title="认知">
-        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
-        <span class="nav-label">认知</span>
-      </button>
       <button class="nav-btn" data-module="thoughts" title="随想">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="10" y1="22.5" x2="14" y2="22.5"/></svg></span>
         <span class="nav-label">随想</span>
       </button>
+      <button class="nav-btn" data-module="learn" title="认知">
+        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
+        <span class="nav-label">认知</span>
+      </button>
       <button class="nav-btn" data-module="timeline" title="时间轴">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
         <span class="nav-label">时间轴</span>
+      </button>
+      <button class="nav-btn" data-module="absorption" title="认知吸收卡">
+        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 18v6"/><path d="M8 22h8"/></svg></span>
+        <span class="nav-label">吸收卡</span>
       </button>
       <button class="nav-btn" data-module="fund" title="基金投资">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg></span>
@@ -59,10 +63,6 @@
       <button class="nav-btn" data-module="ai-daily" title="AI日报">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="14" y2="11"/></svg></span>
         <span class="nav-label">日报</span>
-      </button>
-      <button class="nav-btn" data-module="github-weekly" title="GitHub周榜">
-        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.66-.22.66-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.36 1.09 2.94.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.74c0 .27.16.58.67.48A10 10 0 0 0 22 12c0-5.52-4.48-10-10-10z"/></svg></span>
-        <span class="nav-label">周榜</span>
       </button>
       <button class="nav-btn" data-module="dance" title="跳舞">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><path d="M8 10c2-1 4 1 4 4v6"/><path d="M16 10c-2-1-4 1-4 4v6"/><line x1="6" y1="18" x2="18" y2="18"/></svg></span>
@@ -103,31 +103,31 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
-  <script src="db_schema.js?v=20260812a"></script>
-  <script src="db.js?v=20260812a"></script>
-  <script src="app.js?v=20260810b"></script>
-  <script src="modules/home.js?v=20260809c"></script>
-  <script src="modules/plans.js?v=20260809a"></script>
-  <script src="modules/finance.js?v=20260809a"></script>
-  <script src="modules/dance.js?v=20260808a"></script>
-  <script src="modules/internship.js?v=20260808a"></script>
-  <script src="modules/market.js?v=20260808a"></script>
-  <script src="modules/timeline.js?v=20260810a"></script>
-  <script src="modules/weight.js?v=20260809a"></script>
-  <script src="modules/drinks.js?v=20260808a"></script>
-  <script src="modules/habits.js?v=20260805d"></script>
-  <script src="modules/okr.js?v=20260808a"></script>
-  <script src="modules/ai-daily.js?v=20260805d"></script>
-  <script src="modules/thoughts.js?v=20260812b"></script>
-  <script src="modules/learn.js?v=20260809a"></script>
-  <script src="modules/github-weekly.js?v=20260805e"></script>
-  <script src="modules/fund.js?v=20260810ai"></script>
+  <script src="db_schema.js?v=20260819a"></script>
+  <script src="db.js?v=20260819a"></script>
+  <script src="app.js?v=20260819a"></script>
+  <script src="modules/plans.js?v=20260819a"></script>
+  <script src="modules/home.js?v=20260819a"></script>
+  <script src="modules/finance.js?v=20260819a"></script>
+  <script src="modules/dance.js?v=20260819a"></script>
+  <script src="modules/internship.js?v=20260819a"></script>
+  <script src="modules/market.js?v=20260819a"></script>
+  <script src="modules/timeline.js?v=20260819a"></script>
+  <script src="modules/weight.js?v=20260819a"></script>
+  <script src="modules/drinks.js?v=20260819a"></script>
+  <script src="modules/habits.js?v=20260819a"></script>
+  <script src="modules/okr.js?v=20260819a"></script>
+  <script src="modules/ai-daily.js?v=20260819a"></script>
+  <script src="modules/thoughts.js?v=20260819a"></script>
+  <script src="modules/learn.js?v=20260819a"></script>
+  <script src="modules/absorption.js?v=20260819a"></script>
+  <script src="modules/fund.js?v=20260819a"></script>
   <script>
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(function(regs){
         regs.forEach(function(r){r.unregister()});
       }).then(function(){
-        navigator.serviceWorker.register('sw.js?v=3').catch(function(){});
+        navigator.serviceWorker.register('sw.js?v=20260819a
       });
     }
   </script>
