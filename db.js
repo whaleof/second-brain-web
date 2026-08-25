@@ -7,7 +7,7 @@
 // 建议始终通过 PWA 桌面图标打开应用，避免 origin 变化。
 
 const DB_NAME = 'second_brain_db';
-const DB_VERSION = 18;                     // v18: 新增 fund_alert_rules（择时监控预警规则）
+const DB_VERSION = 19;                     // v19: 重新触发升级，补齐可能缺失的 object store（v18 部分浏览器升级中断导致缺表）
 const LS_BACKUP_KEY = 'sb_indexeddb_backup';
 const SYNC_META_STORE = 'sync_meta';
 const TOMBSTONES_STORE = 'tombstones';
@@ -22,10 +22,27 @@ const { validateRecord, DBError } = (typeof window !== 'undefined' && window.Sch
 // 部署到静态托管（GitHub Pages / CloudStudio / Cloudflare Pages）后，
 // 在「设置 → 后端服务地址」填入本机同步/行情服务地址（如 cloudflared 隧道 https URL），
 // 页面即可从任何地方加载并回连本机 server.py 做同步与行情代理。
+// 云端写权限默认令牌——混淆存储，避免源码明文泄露（纯前端无法真保密，此为"提高复制门槛"的混淆，非加密）。
+// 运行期由 _decodeToken 还原；localStorage 显式设置 sb_api_token 时优先用用户值，否则用此默认值。用户无需手填。
+const _TOKEN_XOR_KEY = 'wb-2026';
+const _OBF_TOKEN = [18, 1, 73, 81, 4, 87, 15, 78, 81, 75, 4, 3, 86, 5, 69, 83, 31, 0, 9, 4, 82, 22, 90, 72, 7, 0, 3, 1, 22, 86, 76, 1];
+function _decodeToken(obf, key) {
+  let s = '';
+  for (let i = 0; i < obf.length; i++) s += String.fromCharCode(obf[i] ^ key.charCodeAt(i % key.length));
+  return s;
+}
+const DEFAULT_API_TOKEN = _decodeToken(_OBF_TOKEN, _TOKEN_XOR_KEY);
 function apiUrl(path) {
   let base = '';
   try { base = localStorage.getItem('sb_api_base') || ''; } catch (e) {}
   base = (base || '').replace(/\/+$/, '');
+  // 只要配置了访问令牌就带上（同源云端或跨域隧道都适用），与 server.py _check_auth 对应
+  // localStorage 显式清空时允许用户覆盖默认值；未设置则使用默认令牌，避免手机/电脑漏填导致上传失败
+  try {
+    const stored = localStorage.getItem('sb_api_token');
+    const token = (stored === null || stored === undefined || stored === '') ? DEFAULT_API_TOKEN : stored;
+    if (token) path += (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
+  } catch (e) {}
   if (!base) return path;
   return base + path;
 }
@@ -297,6 +314,8 @@ class SecondBrainDB {
           }
           resolve();
           this._scheduleBackup();
+          // 删除后立即同步（不等 5 秒防抖），避免墓碑窗口期关浏览器导致没上云、卡片反复复活
+          this.syncNow().catch(e => console.warn('[sync] 删除后同步失败', e));
         };
         delReq.onerror = () => reject(delReq.error);
       };
@@ -425,6 +444,16 @@ class SecondBrainDB {
   }
 
   _scheduleDiskBackup() {
+    // 没填访问令牌就别上送（POST /api/backup 必须鉴权，没 token 必 401，
+    // 把这次 401 控制成「错误一次就被打住」而不是反复冲击后端）
+    const token = (typeof localStorage !== 'undefined') ? localStorage.getItem('sb_api_token') : null;
+    if (!token) {
+      this._lastDiskBackup = { ok: false, at: Date.now(), error: '未配置访问令牌，跳过云端磁盘备份（数据已落 IndexedDB + localStorage）' };
+      return;
+    }
+    // 上一轮已经 401/网络失败就别高频重试，30 分钟内不重试
+    const last = this._lastDiskBackup;
+    if (last && !last.ok && (Date.now() - (last.at || 0) < 1800000)) return;
     if (this._diskBackupTimer) clearTimeout(this._diskBackupTimer);
     this._diskBackupTimer = setTimeout(() => this.backupToDisk().catch(() => {}), 2000);
   }
@@ -524,7 +553,12 @@ class SecondBrainDB {
     since = since || 0;
     const changes = {};
     let count = 0;
+    await this.open();
     for (const name of STORES) {
+      if (!this.db.objectStoreNames.contains(name)) {
+        console.warn(`[sync] 本地 IndexedDB 缺少 store "${name}"，跳过推送；下次 DB 升级会自动补齐`);
+        continue;
+      }
       const records = await this.getAll(name);
       const changed = records.filter(r => (r.updatedAt || 0) > since);
       if (changed.length) {
@@ -541,23 +575,40 @@ class SecondBrainDB {
     this._suppressCloudSync = true;
     this._suppressBackup = true;
     try {
+      let skipped = 0;
       for (const [storeName, records] of Object.entries(changes || {})) {
         if (!STORES.includes(storeName)) continue;
         for (const r of records) {
           if (!r.gid) continue;
-          const local = await this._getByGid(storeName, r.gid);
-          const incomingUpdated = r.updatedAt || 0;
-          if (!local) {
-            // 新记录：去掉对端本地 id，让自增生成新本地 id
-            const { id, ...rest } = r;
-            await this.add(storeName, rest);
-          } else if (incomingUpdated > (local.updatedAt || 0)) {
-            // 冲突：以最新修改时间为准覆盖
-            const updated = { ...r, id: local.id };
-            await this.put(storeName, updated);
+          // 防御：timeline_logs.hour 归一化，避免脏数据（如 24）触发校验抛错导致整批同步失败
+          let rec = r;
+          if (storeName === 'timeline_logs' && r.hour !== undefined) {
+            let h = parseInt(r.hour, 10);
+            if (isNaN(h)) h = 0;
+            if (h < 0) h = 0;
+            if (h > 23) h = 23;
+            rec = { ...r, hour: h };
+          }
+          const local = await this._getByGid(storeName, rec.gid);
+          const incomingUpdated = rec.updatedAt || 0;
+          try {
+            if (!local) {
+              // 新记录：去掉对端本地 id，让自增生成新本地 id
+              const { id, ...rest } = rec;
+              await this.add(storeName, rest);
+            } else if (incomingUpdated > (local.updatedAt || 0)) {
+              // 冲突：以最新修改时间为准覆盖
+              const updated = { ...rec, id: local.id };
+              await this.put(storeName, updated);
+            }
+          } catch (err) {
+            // 单条记录写入失败（如历史脏数据）不阻断其余记录；仅告警，绝不让整批同步失败
+            skipped++;
+            console.warn(`[sync] 跳过一条 ${storeName} 记录(gid=${rec.gid}):`, err && err.message);
           }
         }
       }
+      if (skipped > 0) console.warn(`[sync] 本次同步跳过 ${skipped} 条异常记录（已保留其余全部数据）`);
       for (const t of (tombstones || [])) {
         if (!t.gid || !t.storeName) continue;
         const local = await this._getByGid(t.storeName, t.gid);
@@ -626,44 +677,50 @@ class SecondBrainDB {
           await this.setSyncMeta('lastSyncAt', 0);
         }
 
-        // 1. 推送本地变更（全量：since=0，避免旧记录因 lastSyncAt 已超前而漏推）
-        const outgoing = await this._collectChanges(0);
-        const pushBody = JSON.stringify({
-          changes: outgoing.changes,
-          tombstones: outgoing.tombstones,
-          meta: { schemaVersion: DB_VERSION },
-          pushedAt: Date.now()
-        });
-        const pushResp = await fetch(apiUrl(`/api/sync?device=${device}&since=${lastSyncAt}`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: pushBody
-        });
-        if (!pushResp.ok) throw new Error(`推送 HTTP ${pushResp.status}`);
-        const pushJson = await pushResp.json();
-        if (!pushJson.ok) throw new Error(pushJson.error || '推送失败');
-
-        // 2. 拉取服务端合并后的变更
+        // 1. 先拉（GET，公开接口，无论有无令牌都能拿到数据，保证界面先有内容）
         const pullResp = await fetch(apiUrl(`/api/sync?device=${device}&since=${lastSyncAt}`));
         if (!pullResp.ok) throw new Error(`拉取 HTTP ${pullResp.status}`);
         const pullJson = await pullResp.json();
         if (!pullJson.ok) throw new Error(pullJson.error || '拉取失败');
-
         await this._applyRemoteChanges(pullJson.changes || {}, pullJson.tombstones || []);
-
-        const newSyncAt = pullJson.serverTime || Date.now();
-        await this.setSyncMeta('lastSyncAt', newSyncAt);
-        this._lastSyncAt = newSyncAt;
-        this._syncState = 'synced';
-        this._lastError = null;
-        this._refreshSyncStatus();
         const pulledCount = this._countChanges(pullJson.changes);
         if (pulledCount > 0) {
           // 同步拉取到远端新数据，通知 UI 重渲染当前模块
           // （治本：过去 syncNow 只 emit 同步状态 sb-sync-status，数据更新后界面不刷新）
           window.dispatchEvent(new CustomEvent('sb-sync-completed', { detail: { pulled: pulledCount } }));
         }
-        return { ok: true, pushed: outgoing.count, pulled: pulledCount };
+
+        // 2. 再推（POST，需令牌；失败仅影响"本地改动上传"，绝不阻断上面已完成的显示）
+        let pushed = 0;
+        try {
+          const outgoing = await this._collectChanges(0);
+          const pushBody = JSON.stringify({
+            changes: outgoing.changes,
+            tombstones: outgoing.tombstones,
+            meta: { schemaVersion: DB_VERSION },
+            pushedAt: Date.now()
+          });
+          const pushResp = await fetch(apiUrl(`/api/sync?device=${device}&since=${lastSyncAt}`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: pushBody
+          });
+          if (!pushResp.ok) throw new Error(`推送 HTTP ${pushResp.status}`);
+          const pushJson = await pushResp.json();
+          if (!pushJson.ok) throw new Error(pushJson.error || '推送失败');
+          pushed = outgoing.count || 0;
+        } catch (pushErr) {
+          // 推送失败多半是未配置令牌或网络问题：数据已拉取并显示，仅记录，不阻断
+          console.warn('[sync] 本地改动上传失败（可能未配置访问令牌）：', pushErr.message);
+          this._lastError = '已拉取云端数据；本地改动暂未上传（' + pushErr.message + '）';
+        }
+
+        const newSyncAt = pullJson.serverTime || Date.now();
+        await this.setSyncMeta('lastSyncAt', newSyncAt);
+        this._lastSyncAt = newSyncAt;
+        this._syncState = 'synced';
+        this._refreshSyncStatus();
+        return { ok: true, pushed, pulled: pulledCount };
       } catch (e) {
         this._syncState = 'error';
         this._lastError = e.message;
@@ -687,6 +744,40 @@ class SecondBrainDB {
   async pushCloud() {
     const res = await this.syncNow();
     return res.ok;
+  }
+
+  // ===== 急诊式重置（08-22 救火）=====
+  // 清空本地 IndexedDB + localStorage 数据，强制重拉云端全量并 dispatch sb-sync-completed。
+  // 用法：浏览器控制台 `await window.DB.emergencyRepair()`，或在设置面板点"🚑 急诊修复"。
+  async emergencyRepair() {
+    console.warn('[emergencyRepair] 清空本地 + 准备重拉云端...');
+    try {
+      if (typeof indexedDB !== 'undefined' && indexedDB.deleteDatabase) {
+        await new Promise((resolve) => {
+          const req = indexedDB.deleteDatabase(DB_NAME);
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          req.onblocked = () => resolve();
+        });
+      }
+      try {
+        localStorage.removeItem('sb_last_backup');
+        localStorage.removeItem('sb_sync_meta');
+        localStorage.removeItem('sb_api_base');
+        // sb_api_token 保留（用户设置的访问令牌别清掉）
+      } catch (e) {}
+      this.db = null;
+      await this.open();
+      await this.setSyncMeta('lastSyncAt', 0);
+      this._lastSyncAt = 0;
+      const res = await this.syncNow(true);
+      console.warn('[emergencyRepair] sync 结果:', res);
+      try { window.dispatchEvent(new CustomEvent('sb-sync-completed', { detail: { pulled: -1, reason: 'emergency' } })); } catch (e) {}
+      return { ok: true, sync: res };
+    } catch (e) {
+      console.error('[emergencyRepair] 失败：', e);
+      return { ok: false, error: e.message };
+    }
   }
 
   async pullCloud() {

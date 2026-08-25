@@ -1,0 +1,42 @@
+# 自动部署到 GitHub Pages（替代手动 git push 后的"等 Pages 自己重建"）
+# 触发：push 到 main 分支，或手动在 Actions 页面点 Run workflow
+# 前置：仓库 Settings → Pages → Source 必须切到 "GitHub Actions"（当前是"Deploy from a branch"）
+# 注意：本 workflow 只有在 Source 切到 GitHub Actions 后才会真正发布；切之前 push 只会跑一次（可能红），切完即正常。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # dist 仓库根就是前端（index.html 在根），直接整目录上传
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

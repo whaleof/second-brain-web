@@ -246,7 +246,7 @@ const Habits = {
     // 一次性数据迁移：只在首次打开时执行，避免每次 render 遍历全库造成卡顿
     await this.ensureMigrated();
     localStorage.setItem(HB_SEEDED_KEY, '1');
-    // 每次渲染检查缺失的默认习惯并补加（按名称去重，不会重复）
+    // 仅在首次打开时播种默认习惯；之后缺失的默认习惯不再自动补回，防止删过的习惯反复复活
     await this.ensureHabits();
     // 实时合并可能新产生的重复习惯（同步/旧迁移残留），幂等且数据量小
     await this.dedupeHabits();
@@ -818,11 +818,14 @@ const Habits = {
     await window.DB.delete('habits', h.id);
     // 若是默认习惯，记入「已删除」集合，避免下次渲染又被自动补回
     if (h && HB_DEFAULT_NAMES.has((h.name || '').trim())) {
+      const name = (h.name || '').trim();
       let removed = [];
       try { removed = JSON.parse(localStorage.getItem(HB_REMOVED_KEY) || '[]'); } catch (e) { removed = []; }
-      if (!removed.includes(h.name)) {
-        removed.push(h.name);
+      if (!removed.includes(name)) {
+        removed.push(name);
         localStorage.setItem(HB_REMOVED_KEY, JSON.stringify(removed));
+        // 同步到 kv_store，让其它设备也知道这个默认习惯被删了，避免换设备后 ensureHabits 又补回
+        try { await window.DB.setKv(HB_REMOVED_KEY, removed); } catch (e) { console.warn('[habits] 已删习惯同步失败:', e); }
       }
     }
     // 修复（08-07 截图 bug）：无论是否默认，都写本地 tombstone store，
@@ -1305,10 +1308,19 @@ const Habits = {
     if (changed) console.log('[habits] 已去除重复习惯');
   },
 
-  // 仅在「缺失且用户未删过」时补加默认习惯；不复活被删习惯
+  // 仅在首次初始化时播种默认习惯；删除过的默认习惯通过 kv_store + tombstone 跨设备同步，不再自动补回
   async ensureHabits() {
+    if (localStorage.getItem(HB_SEEDED_KEY)) return;  // 已播种过，不再自动补回缺失默认习惯
     let removed = [];
-    try { removed = JSON.parse(localStorage.getItem(HB_REMOVED_KEY) || '[]'); } catch (e) { removed = []; }
+    // 优先读 kv_store（跨设备同步的删除记录）
+    try {
+      const kv = await window.DB.getKv(HB_REMOVED_KEY);
+      if (Array.isArray(kv)) removed = kv;
+    } catch (e) {}
+    // 回退 localStorage（兼容旧数据）
+    if (!removed.length) {
+      try { removed = JSON.parse(localStorage.getItem(HB_REMOVED_KEY) || '[]'); } catch (e) { removed = []; }
+    }
     const removedSet = new Set(removed);
     // 已被 tombstone 删除的默认习惯（跨设备同步的删除记录），不再补回
     const tombstoned = new Set((await window.DB.getAll('tombstones'))
@@ -1342,7 +1354,7 @@ const Habits = {
       await window.DB.add('habits', { ...d, sample: true, gid: hbStableGid(d.name) });
       added++;
     }
-    if (added) console.log(`[habits] 补加了 ${added} 个缺失习惯`);
+    if (added) console.log(`[habits] 首次播种补加 ${added} 个默认习惯`);
   },
 
   // 把默认习惯统一到稳定 gid，并合并历史重复（各设备曾用随机 gid 独立播种导致同步后重复）。

@@ -17,7 +17,8 @@ const App = {
     thoughts: { title: '随想', render: () => Thoughts.render() },
     learn: { title: '认知', render: () => Learn.render() },
     absorption: { title: '认知吸收卡', render: () => Absorption.render() },
-    fund: { title: '基金投资', render: () => Fund.render() }
+    fund: { title: '基金投资', render: () => Fund.render() },
+    xhs: { title: '小红书', render: () => XHS.render() }
   },
   theme: localStorage.getItem('sb_theme') || 'light'
 };
@@ -160,7 +161,7 @@ function navigateTo(module) {
   App.modules[module].render();
   // 控制 FAB（时间轴、体重、饮品、首页、市场、备忘录不需要 FAB；计划模块顶部已有「添加」输入框，亦隐藏）
   const fab = document.getElementById('fab');
-  if (module === 'timeline' || module === 'weight' || module === 'drinks' || module === 'home' || module === 'market' || module === 'memo' || module === 'plans' || module === 'ai-daily' || module === 'thoughts' || module === 'habits' || module === 'okr' || module === 'fund' || module === 'absorption') {
+  if (module === 'timeline' || module === 'weight' || module === 'drinks' || module === 'home' || module === 'market' || module === 'memo' || module === 'plans' || module === 'ai-daily' || module === 'thoughts' || module === 'habits' || module === 'okr' || module === 'fund' || module === 'absorption' || module === 'xhs') {
     fab.classList.remove('show');
   } else {
     fab.onclick = () => onFabClick(module);
@@ -249,6 +250,13 @@ function openSettings() {
           <input id="apiBaseInput" class="text-input" style="width:100%;margin-top:8px;font-size:12px" placeholder="留空=同源；部署到静态托管后填同步/行情服务地址，如 https://xxx.trycloudflare.com" />
           <p class="text-xs text-sub" style="margin-top:4px">页面部署到 GitHub Pages / CloudStudio 等静态托管后，在此填入本机 server.py 的可访问地址（建议 cloudflared 隧道 https URL），即可从任意设备回连做同步与行情。留空则使用当前网址同源。</p>
         </div>
+        <div style="padding:8px 0">
+          <div class="row-between">
+            <span>访问令牌</span>
+          </div>
+          <input id="apiTokenInput" class="text-input" style="width:100%;margin-top:8px;font-size:12px" placeholder="连云端服务器时填写；本地 localhost 留空即可" />
+          <p class="text-xs text-sub" style="margin-top:4px">云端服务器已启用 token 鉴权，从公网访问 API 必须填写；本机 localhost 访问无需令牌。</p>
+        </div>
       </div>
       <div class="form-group">
         <div class="row-between" style="padding:8px 0">
@@ -266,6 +274,17 @@ function openSettings() {
           <button class="btn btn-danger btn-sm" id="clearBtn">清空</button>
         </div>
       </div>
+      <div class="form-group" style="margin-top:14px;padding:14px;border:1px dashed #f0c4d0;border-radius:8px;background:#fff7fa">
+        <div class="row-between" style="padding:0">
+          <span style="color:#c2416b;font-weight:600">🚑 急救修复（界面/数据疑似坏）</span>
+          <button class="btn btn-danger btn-sm" id="emergencyBtn">清本地·重拉云</button>
+        </div>
+        <p class="text-xs text-sub" style="margin-top:6px;line-height:1.6">
+          清空浏览器 IndexedDB、旧 localStorage、保留访问令牌；再从云端全量拉取并强制重渲染。<br/>
+          若你看到「时间轴/随想/饮品全空但 sync 持续 200」，直接点这个按钮，不用进控制台。
+        </p>
+        <p class="text-xs text-sub" id="emergencyStatus" style="margin-top:4px"></p>
+      </div>
       <div class="form-group" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <p class="text-small text-sub" style="line-height:1.8">
           📱 <b>第二大脑 · WorkBuddy</b><br/>
@@ -280,13 +299,18 @@ function openSettings() {
   setTimeout(async () => {
     // 加载磁盘备份信息
     const diskStatusEl = document.getElementById('diskBackupStatus');
-    const diskInfo = await window.DB.getDiskBackupInfo();
-    if (diskInfo.ok && diskInfo.exists) {
-      diskStatusEl.textContent = `✅ 磁盘备份 ${relativeTime(diskInfo.updatedAt)} · ${diskInfo.total} 条 · ${(diskInfo.size/1024).toFixed(1)} KB`;
-    } else if (diskInfo.ok && !diskInfo.exists) {
-      diskStatusEl.textContent = '⏳ 暂无磁盘备份，请点击「立即备份」或等待自动备份';
+    const token = localStorage.getItem('sb_api_token');
+    if (!token) {
+      diskStatusEl.textContent = '🔒 未配置访问令牌，云端磁盘备份未启用（数据已在 IndexedDB + localStorage 上）';
     } else {
-      diskStatusEl.textContent = '⚠️ 磁盘备份信息获取失败：' + (diskInfo.reason || '服务未启动');
+      const diskInfo = await window.DB.getDiskBackupInfo();
+      if (diskInfo.ok && diskInfo.exists) {
+        diskStatusEl.textContent = `✅ 磁盘备份 ${relativeTime(diskInfo.updatedAt)} · ${diskInfo.total} 条 · ${(diskInfo.size/1024).toFixed(1)} KB`;
+      } else if (diskInfo.ok && !diskInfo.exists) {
+        diskStatusEl.textContent = '⏳ 暂无磁盘备份，请点击「立即备份」或等待自动备份';
+      } else {
+        diskStatusEl.textContent = '⚠️ 磁盘备份信息获取失败：' + (diskInfo.reason || '服务未启动');
+      }
     }
 
     document.getElementById('diskBackupBtn').onclick = async () => {
@@ -319,6 +343,17 @@ function openSettings() {
       };
     }
 
+    const apiTokenInput = document.getElementById('apiTokenInput');
+    if (apiTokenInput) {
+      apiTokenInput.value = localStorage.getItem('sb_api_token') || '';
+      apiTokenInput.onchange = () => {
+        const v = (apiTokenInput.value || '').trim();
+        if (v) localStorage.setItem('sb_api_token', v);
+        else localStorage.removeItem('sb_api_token');
+        toast('访问令牌已保存，重启同步生效');
+      };
+    }
+
     document.getElementById('setThemeBtn').onclick = () => {
       toggleTheme();
       hideModal();
@@ -342,6 +377,27 @@ function openSettings() {
         statusEl.textContent = '⚠️ 当前离线，变更已缓存，联网后自动同步';
       } else {
         statusEl.textContent = '⚠️ 同步失败：' + (res.reason || '请检查局域网连接');
+      }
+    };
+    // 急救修复按钮
+    document.getElementById('emergencyBtn').onclick = async () => {
+      const statusEl = document.getElementById('emergencyStatus');
+      const btn = document.getElementById('emergencyBtn');
+      btn.disabled = true;
+      statusEl.textContent = '⏳ 清空本地 + 重拉云端...（约 10 秒）';
+      try {
+        const res = await window.DB.emergencyRepair();
+        if (res.ok) {
+          statusEl.textContent = `✅ 修复完成 · sync 拉取 ${res.sync.pulled || 0} 条 · 应已自动重渲染`;
+          // 1.5 秒后关弹窗并回到当前模块（强制 render）
+          setTimeout(() => { hideModal(); navigateTo(App.currentModule); }, 1500);
+        } else {
+          statusEl.textContent = '❌ 失败：' + (res.error || '未知错误');
+        }
+      } catch (e) {
+        statusEl.textContent = '❌ 异常：' + e.message;
+      } finally {
+        btn.disabled = false;
       }
     };
     document.getElementById('cloudForce').onclick = async () => {
@@ -516,6 +572,14 @@ async function boot() {
     checkTunnelHint();
     if (navigator.onLine) window.DB.syncNow().catch(() => {});
   }, 3000);
+
+  // 全局保险：首屏即按真实日期迁移计划（明日→今日、过期今日→归档），
+  // 覆盖「深链直达 Plans 模块」等 home.js/plans.js 的 render 未触发场景
+  try {
+    if (typeof migratePlans === 'function') await migratePlans();
+  } catch (e) {
+    console.warn('[migratePlans] 首屏迁移失败(已忽略):', e);
+  }
 
   // 恢复上次模块
   const last = localStorage.getItem('sb_module') || 'home';

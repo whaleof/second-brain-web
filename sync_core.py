@@ -113,7 +113,11 @@ def merge_into_master(master, incoming_changes, incoming_tombstones, now, incomi
             if rec and _ts(t.get('deletedAt')) > _ts(rec.get('updatedAt')):
                 del master['data'][store_name][gid]
 
-    # 3. timeline 重复条目去重：同 date+hour+content 完全相同的记录只留最新一条
+    # 3. timeline 去重（非破坏性，2026-08-22 安全护栏）
+    # 原逻辑会把「date+hour+content 完全相同」的多条记录删到只剩一条
+    # （写 tombstone 并从 data 移除），曾误删正常记录、造成静默数据丢失。
+    # 改为【只统计、绝不删除】：同 gid 的更新已由 step 1 处理；不同 gid 的
+    # 内容重复最坏只在 UI 多显示一条，远比静默丢数据可接受。
     tl_store = master['data'].get('timeline_logs')
     if tl_store:
         tl_groups = {}
@@ -129,18 +133,11 @@ def merge_into_master(master, incoming_changes, incoming_tombstones, now, incomi
             except (TypeError, ValueError):
                 continue
             key = (date, hour, r.get('content'))
-            tl_groups.setdefault(key, []).append((gid, r))
-        for key, items in tl_groups.items():
-            if len(items) <= 1:
-                continue
-            items.sort(key=lambda x: _ts(x[1].get('updatedAt')))
-            for gid, r in items[:-1]:
-                master['tombstones'][gid] = {
-                    'gid': gid,
-                    'storeName': 'timeline_logs',
-                    'deletedAt': now
-                }
-                tl_store.pop(gid, None)
+            tl_groups.setdefault(key, []).append(gid)
+        _dup_groups = [v for v in tl_groups.values() if len(v) > 1]
+        if _dup_groups:
+            # 仅统计重复组数量，不做任何删除动作（防静默丢数据）
+            pass
 
     # 3.5 透传 schemaVersion（前后端版本对齐护栏）：取 incoming 与本地较大者，
     # 保证多端版本号单调对齐，又不因高版本端临时回落而丢数据

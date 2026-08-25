@@ -279,14 +279,27 @@ const Plans = {
       setTimeout(() => {
         document.getElementById('p_save').onclick = async () => {
           const planTypeVal = document.getElementById('p_planType').value;
+          const deadlineVal = document.getElementById('p_deadline').value;
+          // 修复：编辑时尊重用户在"任务日期"输入框里改的值；只有用户没填才按 planType 默认填
+          // 之前 bug：保存时 planDate 不读输入框、强制按 planType 重算，导致用户改的日期被悄悄覆盖回今天/明天
+          let planDateVal;
+          if (deadlineVal) {
+            planDateVal = deadlineVal;
+          } else if (planTypeVal === 'tomorrow') {
+            planDateVal = fmtDate(new Date(Date.now() + 86400000));
+          } else if (planTypeVal === 'today') {
+            planDateVal = todayStr();
+          } else {
+            planDateVal = '';
+          }
           const data = {
             title: document.getElementById('p_title').value.trim(),
             category: document.getElementById('p_category').value,
             planType: planTypeVal,
-            planDate: planTypeVal === 'tomorrow' ? fmtDate(new Date(Date.now() + 86400000)) : (planTypeVal === 'today' ? todayStr() : ''),
+            planDate: planDateVal,
             weekStart: planTypeVal === 'week' ? weekStartStr() : '',
             priority: document.getElementById('p_priority').value,
-            deadline: document.getElementById('p_deadline').value,
+            deadline: deadlineVal,
             goal: document.getElementById('p_goal').value.trim(),
             status: p.status || 'active',
             progress: p.progress || 0,

@@ -123,7 +123,7 @@ const Home = {
           <span class="home-card-title">📝 今日计划 · ${todayPlans.length} 项</span>
         </div>
         <div class="home-th-quick" onclick="event.stopPropagation()">
-          <input class="input home-th-input" id="home_plan_input" type="text" placeholder="加一条今日计划，回车即可" />
+          <input class="input home-th-input" id="home_plan_input" type="text" placeholder="加计划，回车选今日/明日" />
           <button class="btn btn-primary home-th-save" onclick="Home.addHomePlan()">添加</button>
         </div>
         ${todayPlans.length === 0 ? '' : planRowsHtml + (todayPlans.length > 3 ? `<div class="text-xs text-sub" style="text-align:center;padding:4px 0">还有 ${todayPlans.length - 3} 条，点卡片查看全部</div>` : '')}
@@ -215,10 +215,42 @@ const Home = {
     if (!el) return;
     const title = el.value.trim();
     if (!title) { el.focus(); return; }
+    // 弹窗让用户明确选「今日 / 明日」，避免明日计划被误写成今日（旧版痛点）
+    showModal({
+      title: '加到哪一天',
+      body: `<div class="form-group"><label class="form-label">计划内容</label><input class="input" id="hp_title" value="${esc(title)}" placeholder="如：下午写周报" /></div>`,
+      footer: `
+        <button class="btn btn-ghost" onclick="hideModal()">取消</button>
+        <button class="btn btn-soft" id="hp_tomorrow">⬇ 明日</button>
+        <button class="btn btn-primary" id="hp_today">今天</button>`
+    });
+    setTimeout(() => {
+      const tEl = document.getElementById('hp_title');
+      if (tEl) tEl.focus();
+      document.getElementById('hp_today').onclick = async () => {
+        const txt = document.getElementById('hp_title').value.trim();
+        if (!txt) return toast('写点什么吧');
+        await this._savePlan(txt, 'today');
+        hideModal();
+      };
+      document.getElementById('hp_tomorrow').onclick = async () => {
+        const txt = document.getElementById('hp_title').value.trim();
+        if (!txt) return toast('写点什么吧');
+        await this._savePlan(txt, 'tomorrow');
+        hideModal();
+      };
+    }, 50);
+  },
+
+  // 统一写入计划：today→今天，tomorrow→明天（planDate 严格按真实日期算）
+  async _savePlan(title, planType) {
+    const planDate = planType === 'tomorrow'
+      ? fmtDate(new Date(Date.now() + 86400000))
+      : todayStr();
     await window.DB.add('plans', {
       title,
-      planType: 'today',
-      planDate: todayStr(),
+      planType,
+      planDate,
       weekStart: '',
       category: '生活',
       status: 'active',
@@ -227,8 +259,7 @@ const Home = {
       subTasks: [],
       createdAt: Date.now()
     });
-    el.value = '';
-    toast('已添加');
+    toast(planType === 'tomorrow' ? '已加入明日计划' : '已加入今日计划');
     await Home.render();
     setTimeout(() => {
       const n = document.getElementById('home_plan_input');
@@ -313,19 +344,21 @@ const Home = {
 
   quickPlan() {
     showModal({
-      title: '加今日计划',
-      body: `<div class="form-group"><label class="form-label">计划内容</label><input class="input" id="qp_text" placeholder="如：下午写周报" onkeydown="if(event.key==='Enter')Home.saveQuickPlan()" /></div>`,
-      footer: `<button class="btn btn-ghost" onclick="hideModal()">取消</button><button class="btn btn-primary" onclick="Home.saveQuickPlan()">添加</button>`
+      title: '加计划',
+      body: `<div class="form-group"><label class="form-label">计划内容</label><input class="input" id="qp_text" placeholder="如：下午写周报" onkeydown="if(event.key==='Enter')document.getElementById('qp_today').click()" /></div>`,
+      footer: `<button class="btn btn-ghost" onclick="hideModal()">取消</button><button class="btn btn-soft" id="qp_tomorrow" onclick="Home.saveQuickPlan('tomorrow')">明日</button><button class="btn btn-primary" id="qp_today" onclick="Home.saveQuickPlan('today')">今日</button>`
     });
     setTimeout(() => { const el = document.getElementById('qp_text'); if (el) el.focus(); }, 60);
   },
-  async saveQuickPlan() {
+  async saveQuickPlan(planType) {
+    planType = planType || 'today';
     const title = document.getElementById('qp_text').value.trim();
     if (!title) return toast('写点什么吧');
+    const planDate = planType === 'tomorrow' ? fmtDate(new Date(Date.now() + 86400000)) : todayStr();
     await window.DB.add('plans', {
       title,
-      planType: 'today',
-      planDate: todayStr(),
+      planType,
+      planDate,
       weekStart: '',
       category: '生活',
       status: 'active',
@@ -335,7 +368,7 @@ const Home = {
       createdAt: Date.now()
     });
     hideModal();
-    toast('已添加');
+    toast(planType === 'tomorrow' ? '已加入明日计划' : '已添加');
     await Home.render();
   },
 

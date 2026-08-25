@@ -44,6 +44,14 @@
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
         <span class="nav-label">时间轴</span>
       </button>
+      <button class="nav-btn" data-module="habits" title="习惯打卡">
+        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+        <span class="nav-label">习惯</span>
+      </button>
+      <button class="nav-btn" data-module="xhs" title="小红书">
+        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg></span>
+        <span class="nav-label">小红书</span>
+      </button>
       <button class="nav-btn" data-module="absorption" title="认知吸收卡">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 18v6"/><path d="M8 22h8"/></svg></span>
         <span class="nav-label">吸收卡</span>
@@ -51,10 +59,6 @@
       <button class="nav-btn" data-module="fund" title="基金投资">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg></span>
         <span class="nav-label">基金</span>
-      </button>
-      <button class="nav-btn" data-module="habits" title="习惯打卡">
-        <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-        <span class="nav-label">习惯</span>
       </button>
       <button class="nav-btn" data-module="drinks" title="饮品">
         <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12l-1 17a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3L6 2z"/><line x1="6" y1="8" x2="18" y2="8"/></svg></span>
@@ -104,10 +108,10 @@
   </div>
   <div class="toast" id="toast"></div>
   <script src="db_schema.js?v=20260819a"></script>
-  <script src="db.js?v=20260819a"></script>
-  <script src="app.js?v=20260819a"></script>
-  <script src="modules/plans.js?v=20260819a"></script>
-  <script src="modules/home.js?v=20260819a"></script>
+  <script src="db.js?v=20260823e"></script>
+  <script src="app.js?v=20260821a"></script>
+  <script src="modules/plans.js?v=20260821b"></script>
+  <script src="modules/home.js?v=20260821a"></script>
   <script src="modules/finance.js?v=20260819a"></script>
   <script src="modules/dance.js?v=20260819a"></script>
   <script src="modules/internship.js?v=20260819a"></script>
@@ -115,19 +119,21 @@
   <script src="modules/timeline.js?v=20260819a"></script>
   <script src="modules/weight.js?v=20260819a"></script>
   <script src="modules/drinks.js?v=20260819a"></script>
-  <script src="modules/habits.js?v=20260819a"></script>
+  <script src="modules/habits.js?v=20260824a"></script>
   <script src="modules/okr.js?v=20260819a"></script>
   <script src="modules/ai-daily.js?v=20260819a"></script>
   <script src="modules/thoughts.js?v=20260819a"></script>
   <script src="modules/learn.js?v=20260819a"></script>
   <script src="modules/absorption.js?v=20260819a"></script>
   <script src="modules/fund.js?v=20260819a"></script>
+  <script src="config/xhs_config.js?v=20260825b"></script>
+  <script src="modules/xhs.js?v=20260825b"></script>
   <script>
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(function(regs){
         regs.forEach(function(r){r.unregister()});
       }).then(function(){
-        navigator.serviceWorker.register('sw.js?v=20260819a
+        navigator.serviceWorker.register('sw.js?v=20260823d');
       });
     }
   </script>
