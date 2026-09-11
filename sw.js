@@ -7,7 +7,7 @@
 //   3. 同步/接口不缓存：/api/* 与任何非 GET 请求一律走网络，杜绝离线假同步、假数据。
 //   4. 即时生效：skipWaiting + clients.claim，新 SW 安装后立刻接管页面，用户无需手动刷新。
 
-const CACHE_VERSION = 'wb-shell-v2';
+const CACHE_VERSION = 'wb-shell-v3';
 const APP_SHELL = [
   './',
   './index.html',

@@ -69,7 +69,8 @@ function updateSyncUI(status) {
     syncing: '同步中…',
     synced: '已同步',
     offline: '离线',
-    error: '同步失败'
+    error: '同步失败',
+    local: '仅本机'
   };
   const last = status.lastSyncAt ? relativeTime(status.lastSyncAt) : '未同步';
   btn.title = `${labels[status.state] || '同步'} · 上次：${last}${status.pendingCount ? ' · 待同步 ' + status.pendingCount + ' 条' : ''}`;
@@ -88,6 +89,18 @@ async function manualSync() {
   } else {
     toast('同步失败：' + (res.reason || '未知错误'));
   }
+}
+
+// B-B 访客/演示模式：在主体内容区顶部插入一条提示，明确数据只存本机、不会上传
+function showGuestBanner() {
+  if (document.getElementById('guestBanner')) return;
+  const b = document.createElement('div');
+  b.id = 'guestBanner';
+  b.style.cssText = 'background:#fff5f8;border:1px solid #ffd0e0;color:#993556;' +
+    'font-size:13px;line-height:1.6;padding:8px 14px;margin:0 0 12px;border-radius:10px;';
+  b.textContent = '访客模式 · 你填的内容仅存在这台设备的浏览器里，不会上传；清缓存或换设备会丢失。想要自己的云端工作台，请联系作者。';
+  const main = document.getElementById('content') || document.getElementById('app') || document.body;
+  main.insertBefore(b, main.firstChild);
 }
 
 async function forceFullSync() {
@@ -525,6 +538,13 @@ async function boot() {
   // 同步状态监听
   updateSyncUI(window.DB.getSyncStatus());
   window.addEventListener('sb-sync-status', (e) => updateSyncUI(e.detail));
+
+  // B-B 访客/演示模式：禁用云端同步与隧道探测，数据仅存本机浏览器
+  if (window.IS_GUEST) {
+    updateSyncUI({ state: 'local', lastSyncAt: 0 });
+    showGuestBanner();
+  }
+
   // 同步拉取到远端新数据后，安全重渲染当前模块（治本：过去 syncNow 只发同步状态，
   // 数据已更新但各模块界面不刷新，必须手动刷新页面才看得到）
   // 若用户正在编辑输入框则跳过，避免打断输入（数据已落库，下次切换/刷新自然更新）
@@ -551,24 +571,28 @@ async function boot() {
 
   // 网络恢复时自动同步
   window.addEventListener('online', () => {
+    if (window.IS_GUEST) return;
     window.DB._syncState = 'idle';
     window.DB._emitSyncStatus();
     checkTunnelHint();
     window.DB.syncNow().catch(() => {});
   });
   window.addEventListener('offline', () => {
+    if (window.IS_GUEST) return;
     window.DB._syncState = 'offline';
     window.DB._emitSyncStatus();
   });
 
   // 定时同步（每 20 秒尝试一次，失败静默）——保证一端打卡后另一端很快收到
   setInterval(() => {
+    if (window.IS_GUEST) return;
     checkTunnelHint();
     if (navigator.onLine) window.DB.syncNow().catch(() => {});
   }, 20000);
 
   // 启动后延迟首次同步
   setTimeout(() => {
+    if (window.IS_GUEST) return;
     checkTunnelHint();
     if (navigator.onLine) window.DB.syncNow().catch(() => {});
   }, 3000);

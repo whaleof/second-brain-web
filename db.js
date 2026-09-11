@@ -32,6 +32,15 @@ function _decodeToken(obf, key) {
   return s;
 }
 const DEFAULT_API_TOKEN = _decodeToken(_OBF_TOKEN, _TOKEN_XOR_KEY);
+
+// B-B 访客/演示模式：托管在 GitHub Pages（*.github.io）或经 /guest 入口进入时，
+// 数据仅存本机浏览器（IndexedDB），绝不触碰云端 master。
+const IS_GUEST = (typeof location !== 'undefined') &&
+  (location.pathname === '/guest' || location.pathname.startsWith('/guest/') ||
+   new URLSearchParams(location.search).get('mode') === 'guest' ||
+   (typeof location.hostname === 'string' && location.hostname.endsWith('github.io')));
+if (typeof window !== 'undefined') window.IS_GUEST = IS_GUEST;
+
 function apiUrl(path) {
   let base = '';
   try { base = localStorage.getItem('sb_api_base') || ''; } catch (e) {}
@@ -669,6 +678,12 @@ class SecondBrainDB {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           this._syncState = 'offline';
           return { ok: false, reason: 'offline' };
+        }
+        // B-B 访客/演示模式：完全跳过云端同步，数据只读写本机 IndexedDB
+        if (IS_GUEST) {
+          this._syncState = 'local';
+          this._emitSyncStatus();
+          return { ok: true, pushed: 0, pulled: 0, local: true };
         }
         const device = encodeURIComponent(this.getDeviceId());
         let lastSyncAt = await this.getSyncMeta('lastSyncAt') || 0;
