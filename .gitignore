@@ -3,6 +3,10 @@
 *.local
 cloud/
 
+# 后端与登录页：仅部署到自建云服务器，不进 GitHub Pages 公开仓库
+server.py
+login.html
+
 # 同步与本地数据（含用户隐私，勿提交）
 .sync/
 data/
